@@ -4,97 +4,203 @@ Estevez J, Manuel Lopez-Guede J, Del Valle-Echavarri J, Caballero-Martin D, Gra�
 
 # Collision Avoidance Algorithm
 
-This simulation implements a Multi-Agent pathfinding algorithm using **Reciprocal Velocity Obstacles (RVO)**. The logic assumes holonomic robots (point masses) and solves for collision-free velocities in a crowded workspace that includes dynamic agents and static/moving tether links.
+This simulation implements a **multi-agent pathfinding algorithm** based on  
+**Reciprocal Velocity Obstacles (RVO)**. Agents are modeled as *holonomic point masses* navigating a shared workspace containing:
 
-The implementation is split into:
-*   **Motion Model**: Simple Euler integration.
-*   **RVO Geometry**: Constructing velocity obstacles based on neighbors.
-*   **Optimization**: A sampling-based solver to find the best velocity.
+- Dynamic agents  
+- Static and moving **tether / link constraints**
+
+The algorithm computes **collision-free velocities** at each timestep.
+
+---
+
+## Algorithm Overview
+
+The implementation is structured into three main components:
+
+- **Motion Model** — Euler integration of agent motion  
+- **RVO Geometry** — Construction of reciprocal velocity obstacles  
+- **Velocity Optimization** — Sampling-based selection of the optimal velocity  
+
+---
 
 ## 1. Motion Model
-The agents move in a 2D plane. For each time step `dt`, the position `P` of agent `i` is updated:
 
-    P_i(t + dt) = P_i(t) + V_i_opt * dt
+Agents move in a 2D plane. For agent \( i \), the position update over a timestep \( \Delta t \) is given by:
 
-### Desired Velocity (V_des)
-Calculated in `compute_V_des`, the agent attempts to move directly toward its goal `G_i` at maximum speed `V_max`:
+\[
+\mathbf{P}_i(t + \Delta t) = \mathbf{P}_i(t) + \mathbf{V}_i^{\text{opt}} \, \Delta t
+\]
 
-    V_des = V_max * (G_i - P_i) / ||G_i - P_i||
+where:
+- \( \mathbf{P}_i \in \mathbb{R}^2 \) is the agent position  
+- \( \mathbf{V}_i^{\text{opt}} \) is the selected collision-free velocity  
 
-*(Note: If the distance to goal is less than the threshold, V_des → 0)*
+---
+
+### Desired Velocity \( \mathbf{V}_{\text{des}} \)
+
+The desired velocity is computed in `compute_V_des`. Each agent attempts to move directly toward its goal \( \mathbf{G}_i \) at maximum speed \( V_{\max} \):
+
+\[
+\mathbf{V}_{\text{des}} =
+\begin{cases}
+V_{\max} \, \dfrac{\mathbf{G}_i - \mathbf{P}_i}{\lVert \mathbf{G}_i - \mathbf{P}_i \rVert}, & \text{if } \lVert \mathbf{G}_i - \mathbf{P}_i \rVert > \varepsilon \\
+\mathbf{0}, & \text{otherwise}
+\end{cases}
+\]
+
+where \( \varepsilon \) is a small threshold indicating goal convergence.
 
 ---
 
 ## 2. Reciprocal Velocity Obstacles (RVO)
-The core logic resides in `RVO_update`. Unlike standard Velocity Obstacles (which assume neighbors keep a constant velocity), **Reciprocal** VO assumes that both colliding agents will shift their velocity by half the required amount to avoid collision.
 
-### A. The Velocity Obstacle (VO)
-For an agent `A` and a neighbor `B`, the forbidden velocity region is a cone.
+The main collision avoidance logic is implemented in `RVO_update`.
 
-1.  **Relative Position:** `diff_P = P_B - P_A`
-2.  **Combined Radius:** `R_sum = R_A + R_B` (implemented as `2 * robot_radius`).
-3.  **Cone Half-Angle (alpha):**
-    The angle width of the collision cone is determined by the tangency of the safety radius over the distance:
+Unlike standard Velocity Obstacles (VO), which assume neighbors maintain constant velocities, **RVO assumes that both agents share responsibility for avoiding collisions**, each contributing half of the velocity change.
 
-    alpha = asin( R_sum / ||diff_P|| )
+---
 
-4.  **Cone Centerline (theta):**
+### A. Velocity Obstacle Construction
 
-    theta = atan2(diff_P.y, diff_P.x)
+For an agent \( A \) and a neighboring agent \( B \):
 
-The geometric bounds of the cone are `[theta - alpha, theta + alpha]`.
+#### Relative Geometry
 
-### B. The Reciprocal Apex
-In velocity space, the "tip" (apex) of the collision cone is translated. For RVO, the apex is located at the average of the current velocities:
+\[
+\mathbf{d} = \mathbf{P}_B - \mathbf{P}_A
+\]
 
-    Apex_AB = (V_A + V_B) / 2
+\[
+R_{\text{sum}} = R_A + R_B \quad \text{(implemented as } 2 \cdot R_{\text{robot}} \text{)}
+\]
 
-*In the code (`RVO.py`), this apex is translated by the robot's current position `P_A` to allow for geometric intersection checks in the global coordinate frame.*
+#### Cone Half-Angle
 
-### C. Tether/Link Avoidance
-The simulation defines "pairs" of robots (simulating a physical link). If Agent `A` is not part of Pair `P (p1, p2)`, the link segment `p1-p2` acts as a linear obstacle.
+The half-angle of the forbidden velocity cone is determined by tangential contact:
 
-1.  **Closest Point Calculation:**
-    Find the point `C` on the segment `p1-p2` that is closest to `P_A` using vector projection.
-2.  **Virtual Obstacle:**
-    Treat point `C` as a static obstacle with radius `R_robot`.
-3.  **Velocity Obstacle:**
-    Since the link "obstacle" is treated as static for the instant calculation:
+\[
+\alpha = \arcsin\!\left( \frac{R_{\text{sum}}}{\lVert \mathbf{d} \rVert} \right)
+\]
 
-    Apex_link = 0 (Origin)
+#### Cone Centerline Direction
+
+\[
+\theta = \operatorname{atan2}(d_y, d_x)
+\]
+
+The forbidden angular region is therefore:
+
+\[
+\theta \in [\, \theta - \alpha,\; \theta + \alpha \,]
+\]
+
+---
+
+### B. Reciprocal Apex Shift
+
+In velocity space, the apex of the RVO cone is shifted to the **average velocity** of the two agents:
+
+\[
+\mathbf{V}_{\text{apex}}^{AB} = \frac{\mathbf{V}_A + \mathbf{V}_B}{2}
+\]
+
+In the implementation (`RVO.py`), this apex is translated into the global coordinate frame using the agent’s current position \( \mathbf{P}_A \) to simplify geometric intersection checks.
+
+---
+
+### C. Tether / Link Avoidance
+
+The simulation supports **linked robot pairs**, representing physical tethers.
+
+If agent \( A \) is *not* part of a linked pair \( (p_1, p_2) \), the segment between them is treated as a **linear obstacle**.
+
+#### Closest Point on the Segment
+
+The closest point \( \mathbf{C} \) on the segment \( p_1 \text{--} p_2 \) to \( \mathbf{P}_A \) is computed via vector projection.
+
+#### Virtual Obstacle Model
+
+- \( \mathbf{C} \) is treated as a **static circular obstacle**
+- Radius: \( R_{\text{robot}} \)
+
+Since the obstacle is static for the current timestep, its velocity is zero, and the VO apex is:
+
+\[
+\mathbf{V}_{\text{apex}}^{\text{link}} = \mathbf{0}
+\]
 
 ---
 
 ## 3. Velocity Optimization (Solver)
-The function `intersect` determines the optimal velocity `V_opt` using a **sampling-based approach** rather than continuous linear programming.
 
-### Step 1: Sampling
-The code generates a grid of candidate velocities (`v_cand`) in polar coordinates:
-*   **Angle:** 0 to 2π
-*   **Magnitude:** 0 to V_max
+The function `intersect` computes the optimal velocity \( \mathbf{V}_{\text{opt}} \) using a **sampling-based approach**.
+
+---
+
+### Step 1: Velocity Sampling
+
+Candidate velocities \( \mathbf{v}_{\text{cand}} \) are generated in polar coordinates:
+
+- Angle: \( \phi \in [0, 2\pi) \)
+- Magnitude: \( r \in [0, V_{\max}] \)
+
+---
 
 ### Step 2: Intersection Test
-A candidate velocity `v_cand` is **admissible** if it lies outside the RVO cones of *all* neighbors and links.
 
-Mathematically, let `v_rel = v_cand - Apex`. If the angle of `v_rel` lies within `[theta - alpha, theta + alpha]` for any neighbor, the candidate is discarded.
+For each candidate velocity, define the relative velocity:
+
+\[
+\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{cand}} - \mathbf{V}_{\text{apex}}
+\]
+
+A velocity is **inadmissible** if:
+
+\[
+\angle(\mathbf{v}_{\text{rel}}) \in [\, \theta - \alpha,\; \theta + \alpha \,]
+\]
+
+for *any* neighboring agent or tether obstacle.
+
+---
 
 ### Step 3: Cost Function
-**Case A: Admissible velocities exist**
-Choose the candidate closest to the desired velocity vector:
 
-    V_opt = argmin( || v - V_des || )
+#### Case A — Admissible Velocities Exist
 
-**Case B: No admissible velocities (Crowded)**
-If the robot is inevitably going to collide (or violates safety margins), it selects the "safest" bad velocity. It calculates a Time-to-Collision (`tc`) factor and penalizes velocities that cause immediate collisions.
+Select the velocity closest to the desired velocity:
 
-    V_opt = argmin( (w / tc(v)) + ||v - V_current|| )
+\[
+\mathbf{V}_{\text{opt}} =
+\arg\min_{\mathbf{v} \in \mathcal{V}_{\text{safe}}}
+\left\lVert \mathbf{v} - \mathbf{V}_{\text{des}} \right\rVert
+\]
 
-Where `w` is a weight factor (set to 0.2 in code) to balance safety vs. tracking the current trajectory.
+---
+
+#### Case B — No Admissible Velocities (Crowded Scenario)
+
+When all velocities violate safety constraints, the algorithm selects the *least dangerous* option using a **time-to-collision** penalty:
+
+\[
+\mathbf{V}_{\text{opt}} =
+\arg\min_{\mathbf{v}}
+\left(
+\frac{w}{\mathrm{tc}(\mathbf{v})}
++
+\left\lVert \mathbf{v} - \mathbf{V}_{\text{current}} \right\rVert
+\right)
+\]
+
+where:
+- \( \mathrm{tc}(\mathbf{v}) \) is the estimated time-to-collision  
+- \( w \) is a weighting factor (set to **0.2** in the code)
 
 ---
 
 ## 4. References
 
-The logic follows the principles of RVO as defined in:
-
-> van den Berg, J., Guy, S. J., Lin, M., & Manocha, D. (2011). **Reciprocal n-body collision avoidance**. *Robotics research*, 3-19.
+> van den Berg, J., Guy, S. J., Lin, M., & Manocha, D. (2011).  
+> **Reciprocal n-body collision avoidance**. *Robotics Research*, 3–19.
