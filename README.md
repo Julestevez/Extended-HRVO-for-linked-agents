@@ -12,16 +12,16 @@ The implementation is split into:
 *   **Optimization**: A sampling-based solver to find the best velocity.
 
 ## 1. Motion Model
-The agents move in a 2D plane. For each time step `dt`, the position `P` of agent `i` is updated:
+The agents move in a 2D plane. For each time step $\Delta t$, the position $P$ of agent $i$ is updated:
 
-    P_i(t + dt) = P_i(t) + V_i_opt * dt
+$$ P_i(t+\Delta t) = P_i(t) + V_i^{opt} \cdot \Delta t $$
 
-### Desired Velocity (V_des)
-Calculated in `compute_V_des`, the agent attempts to move directly toward its goal `G_i` at maximum speed `V_max`:
+### Desired Velocity ($V_{des}$)
+Calculated in `compute_V_des`, the agent attempts to move directly toward its goal $G_i$ at maximum speed $V_{max}$:
 
-    V_des = V_max * (G_i - P_i) / ||G_i - P_i||
+$$ V_{des} = V_{max} \cdot \frac{G_i - P_i}{\|G_i - P_i\|} $$
 
-*(Note: If the distance to the goal is less than the threshold, `V_des` becomes 0)*.
+*(Note: If the distance to goal is less than the threshold, $V_{des} \to 0$)*.
 
 ---
 
@@ -29,67 +29,62 @@ Calculated in `compute_V_des`, the agent attempts to move directly toward its go
 The core logic resides in `RVO_update`. Unlike standard Velocity Obstacles (which assume neighbors keep a constant velocity), **Reciprocal** VO assumes that both colliding agents will shift their velocity by half the required amount to avoid collision.
 
 ### A. The Velocity Obstacle (VO)
-For an agent `A` and a neighbor `B`, the forbidden velocity region is a cone.
+For an agent $A$ and a neighbor $B$, the forbidden velocity region is a cone.
 
-1.  **Relative Position:** `diff_P = P_B - P_A`
-2.  **Combined Radius:** `R_sum = R_A + R_B` (implemented as `2 * robot_radius`).
-3.  **Cone Half-Angle (alpha):**
+1.  **Relative Position:** $\Delta P = P_B - P_A$
+2.  **Combined Radius:** $R_{sum} = R_A + R_B$ (implemented as `2 * robot_radius`).
+3.  **Cone Half-Angle ($\alpha$):**
     The angle width of the collision cone is determined by the tangency of the safety radius over the distance:
-    
-    alpha = asin( R_sum / ||diff_P|| )
+    $$ \alpha = \arcsin\left(\frac{R_{sum}}{\|\Delta P\|}\right) $$
+4.  **Cone Centerline ($\theta$):**
+    $$ \theta = \operatorname{atan2}(\Delta P_y, \Delta P_x) $$
 
-4.  **Cone Centerline (theta):**
-    
-    theta = atan2(diff_P.y, diff_P.x)
-
-The geometric bounds of the cone are `[theta - alpha, theta + alpha]`.
+The geometric bounds of the cone are $[\theta - \alpha, \theta + \alpha]$.
 
 ### B. The Reciprocal Apex
 In velocity space, the "tip" (apex) of the collision cone is translated. For RVO, the apex is located at the average of the current velocities:
 
-    Apex_AB = (V_A + V_B) / 2
+$$ \text{Apex}_{AB} = \frac{V_A + V_B}{2} $$
 
-*In the code (`RVO.py`), this apex is translated by the robot's current position `P_A` to allow for geometric intersection checks in the global coordinate frame.*
+*In the code (`RVO.py`), this apex is translated by the robot's current position $P_A$ to allow for geometric intersection checks in the global coordinate frame.*
 
 ### C. Tether/Link Avoidance
-The simulation defines "pairs" of robots (simulating a physical link). If Agent `A` is not part of Pair `P (p1, p2)`, the link segment `p1-p2` acts as a linear obstacle.
+The simulation defines "pairs" of robots (simulating a physical link). If Agent $A$ is not part of Pair $P (p_1, p_2)$, the link segment $\overline{P_{p1}P_{p2}}$ acts as a linear obstacle.
 
 1.  **Closest Point Calculation:**
-    Find the point `C` on the segment `p1-p2` that is closest to `P_A` using vector projection.
+    Find the point $C$ on the segment $\overline{P_{p1}P_{p2}}$ that is closest to $P_A$ using vector projection.
 2.  **Virtual Obstacle:**
-    Treat point `C` as a static obstacle with radius `R_robot`.
+    Treat point $C$ as a static obstacle with radius $R_{robot}$.
 3.  **Velocity Obstacle:**
     Since the link "obstacle" is treated as static for the instant calculation:
-    
-    Apex_link = 0 (Origin)
+    $$ \text{Apex}_{link} = 0 \quad (\text{Origin}) $$
 
 ---
 
 ## 3. Velocity Optimization (Solver)
-The function `intersect` determines the optimal velocity `V_opt` using a **sampling-based approach** rather than continuous linear programming.
+The function `intersect` determines the optimal velocity $V_{opt}$ using a **sampling-based approach** rather than continuous linear programming.
 
 ### Step 1: Sampling
-The code generates a grid of candidate velocities (`v_cand`) in polar coordinates:
-*   **Angle:** 0 to 2π
-*   **Magnitude:** 0 to V_max
+The code generates a grid of candidate velocities ($v_{cand}$) in polar coordinates:
+*   $\phi \in [0, 2\pi)$ (Angle)
+*   $\rho \in (0, V_{max}]$ (Magnitude)
 
 ### Step 2: Intersection Test
-A candidate velocity `v_cand` is **admissible** if it lies outside the RVO cones of *all* neighbors and links.
+A candidate velocity $v_{cand}$ is **admissible** if it lies outside the RVO cones of *all* neighbors and links.
 
-Mathematically, let `v_rel = v_cand - Apex`. If the angle of `v_rel` lies within `[theta - alpha, theta + alpha]` for any neighbor, the candidate is discarded.
+Mathematically, let $v_{rel} = v_{cand} - \text{Apex}$. If the angle of $v_{rel}$ lies within $[\theta - \alpha, \theta + \alpha]$ for any neighbor, the candidate is discarded.
 
 ### Step 3: Cost Function
 **Case A: Admissible velocities exist**
 Choose the candidate closest to the desired velocity vector:
-
-    V_opt = argmin( || v - V_des || )
+$$ V_{opt} = \operatorname*{argmin}_{v \in \text{admissible}} \| v - V_{des} \| $$
 
 **Case B: No admissible velocities (Crowded)**
-If the robot is inevitably going to collide (or violates safety margins), it selects the "safest" bad velocity. It calculates a Time-to-Collision (`tc`) factor and penalizes velocities that cause immediate collisions.
+If the robot is inevitably going to collide (or violates safety margins), it selects the "safest" bad velocity. It calculates a Time-to-Collision ($tc$) factor and penalizes velocities that cause immediate collisions.
 
-    V_opt = argmin( (w / tc(v)) + ||v - V_current|| )
+$$ V_{opt} = \operatorname*{argmin}_{v \in \text{inadmissible}} \left( \frac{w}{tc(v)} + \|v - V_{current}\| \right) $$
 
-Where `w` is a weight factor (set to 0.2 in code) to balance safety vs. tracking the current trajectory.
+Where $w$ is a weight factor (set to 0.2 in code) to balance safety vs. tracking the current trajectory.
 
 ---
 
