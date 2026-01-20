@@ -95,27 +95,36 @@ Where `w` is a weight factor (set to 0.2 in code) to balance safety vs. tracking
 
 ---
 
-Some examples of this algorithm are shown next:
-<br>
-**Experiment 1: Each pair was required to maintain proximity while navigating to their respective goals**
-<br>
-<img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/1-%20Extended%20HRVO%20in%20pairs/Experiment%201%20simulation.gif" align= "left" alt="Experiment 1" width="800"/>
+## 4. Simulation Results
+
+**Experiment 1: Paired navigation**
+Each pair was required to maintain proximity while navigating to their respective goals.
+
+<p align="center">
+  <img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/1-%20Extended%20HRVO%20in%20pairs/Experiment%201%20simulation.gif?raw=true" alt="Experiment 1" width="600"/>
+</p>
 
 <br>
-<br>
-**Experiment 2: Same as experiment 1, but with circular obstacles**
-<br>
-<img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/2-%20Extended%20HRVO%20in%20pairs%20%26%20circular%20obstacles/Experiment-2-simulation.gif" align= "left" alt="Experiment 2" width="800"/>
-<br>
+
+**Experiment 2: Paired navigation with circular obstacles**
+Same as experiment 1, but navigating through a field of static obstacles.
+
+<p align="center">
+  <img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/2-%20Extended%20HRVO%20in%20pairs%20%26%20circular%20obstacles/Experiment-2-simulation.gif?raw=true" alt="Experiment 2" width="600"/>
+</p>
+
 <br>
 
-**Experiment 3: Groups of 3 agents and circular obstacles in the middle**
-<br>
-<img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/3-%20Extended%20HRVO%20in%20triads%20%26%20circular%20obstacle/Experiment%203%20simulation.gif" align= "left" alt="Experiment 3" width="800"/>
-<br>
-<br>
+**Experiment 3: Triads**
+Groups of 3 linked agents passing a central circular obstacle.
+
+<p align="center">
+  <img src="https://github.com/Julestevez/Extended-HRVO-for-linked-agents/blob/main/3-%20Extended%20HRVO%20in%20triads%20%26%20circular%20obstacle/Experiment%203%20simulation.gif?raw=true" alt="Experiment 3" width="600"/>
+</p>
+
 ---
-## 4. References
+
+## 5. Algorithm References
 
 The logic follows the principles of RVO as defined in:
 
