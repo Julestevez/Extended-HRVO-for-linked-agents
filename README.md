@@ -21,7 +21,7 @@ Calculated in `compute_V_des`, the agent attempts to move directly toward its go
 
 $$ V_{des} = V_{max} \cdot \frac{G_i - P_i}{\|G_i - P_i\|} $$
 
-*(Note: If the distance to goal is less than the threshold, $V_{des} \to 0$)*.
+*(Note: If the distance to goal is less than the threshold, $$V_{des} \to 0$$)*.
 
 ---
 
